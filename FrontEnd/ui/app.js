@@ -79,7 +79,7 @@ function initOAuthClient() {
           try {
             const res = await fetch("/api/auth/google/code", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", "X-Requested-With": "XmlHttpRequest" },
               body: JSON.stringify({ code: response.code })
             });
             const data = await res.json();
@@ -128,7 +128,7 @@ function loginUser(user) {
 
 signOutBtn.addEventListener("click", async () => {
   try {
-    await fetch("/api/auth/disconnect", { method: "POST" });
+    await fetch("/api/auth/disconnect", { method: "POST", headers: { "X-Requested-With": "XmlHttpRequest" } });
   } catch {}
 
   state.currentUser = null;
@@ -183,7 +183,7 @@ callForm.addEventListener("submit", async (e) => {
   try {
     const res = await fetch("/api/call", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XmlHttpRequest" },
       body: JSON.stringify({
         to: e164,
         from: state.agentNumber,

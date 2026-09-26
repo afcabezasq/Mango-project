@@ -1,5 +1,7 @@
 # Mango
 
+**Current Python listener:** see [INTEGRATION.md](INTEGRATION.md) for the inbound → Supabase handoff and Google Calendar through Archery's UI. With `pyproject.toml` present, `guava run .` selects Python; `guava run . -- --check` has been verified offline. The TypeScript files below remain as the previous iteration for reference.
+
 Mango is an AI secretary for personal and business calls, built in **TypeScript** on Guava. It answers inbound calls, collects messages and appointment requests, and can place one explicitly authorized outgoing call to a named recipient.
 
 **First iteration: implemented and partially verified — 2026-09-26.** Type checking, 14 offline tests, both profile preflights, production dependency loading, and a live WebRTC listener check passed. No Mango conversation, real phone call, or cloud deployment has been tested.
