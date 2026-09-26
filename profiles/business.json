@@ -1,0 +1,7 @@
+{
+  "kind": "business",
+  "ownerName": "",
+  "organization": "Mango Industries",
+  "approvedFacts": [],
+  "instructions": "Answer questions only from approved business facts. Take customer messages, inquiries, callback requests, and appointment requests. No booking or notification service is connected yet."
+}
