@@ -84,6 +84,19 @@
         </form>
       </div>
 
+      <div id="calendarAccessPanel" class="field-box" hidden>
+        <label for="calendarAccessCode" class="field-label">Private calendar access code</label>
+        <form id="calendarAccessForm" class="input-form">
+          <div class="input-pill">
+            <input id="calendarAccessCode" class="phone-input" type="password" inputmode="numeric"
+                   pattern="[0-9]{8,12}" minlength="8" maxlength="12" autocomplete="new-password"
+                   placeholder="8–12 digits" required aria-describedby="calendarAccessHelp">
+            <button class="pill-cta" type="submit">Save code</button>
+          </div>
+        </form>
+        <p id="calendarAccessHelp">Mango asks for this code before reading your calendar over the phone.</p>
+      </div>
+
       <!-- Minimal Status Feedback -->
       <div id="statusToast" class="status-toast" style="display: none;">
         <span class="status-dot"></span>

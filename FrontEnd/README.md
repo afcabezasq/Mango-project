@@ -2,6 +2,8 @@
 
 The Mango frontend is a lightweight dashboard for connecting Google Calendar / Gmail via OAuth, displaying the voice agent line, and initiating calls.
 
+The Python listener now reuses this UI's server-side Google connection; see [Listener/INTEGRATION.md](../Listener/INTEGRATION.md). Open `http://localhost:3000` (loopback only). Reconnect any older login once to save the verified account ID and token expiry. `MANGO_UI_ORIGIN` can override the expected browser origin and must also be registered on the Google Web OAuth client.
+
 ---
 
 ## 🚀 How to Run
@@ -71,3 +73,7 @@ FrontEnd/
 - `POST /api/auth/google/code` — Exchanges Google authorization code for access & refresh tokens.
 - `POST /api/auth/disconnect` — Clears stored Google tokens.
 - `POST /api/call` — Dispatches an outbound call request to the specified phone number.
+
+## Calendar reads and scheduled reminders
+
+After Google sign-in, set a private 8–12 digit calendar access code in the dashboard. Mango requires it to read event details by phone. Bookings also collect a callback number and reminder time, defaulting to event start if accepted. See [the integration guide](../Listener/INTEGRATION.md). Root `.env` now loads consistently alongside frontend overrides; process environment wins.

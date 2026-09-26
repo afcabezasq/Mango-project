@@ -6,8 +6,8 @@ Mango is an AI secretary for personal and business phone calls, built on [Guava]
 
 | Folder | Stack | What it does |
 |---|---|---|
-| [Listener/](Listener/) | TypeScript, Node 24 | Inbound agent. Answers calls with a personal or business profile, collects messages and appointment requests, and writes private call reports. It can also place one authorized outgoing call. See [Listener/README.md](Listener/README.md). |
-| [Caller/](Caller/) | Python 3.11+, uv | Message delivery. An intake agent saves messages with a delivery time to SQLite, and a scheduler calls each recipient when their message is due. See [Caller/README.md](Caller/README.md). |
+| [Listener/](Listener/) | Python 3.11+, uv | Inbound Mango agent. Saves confirmed phone-message requests to Supabase and books confirmed appointments using the account connected in the frontend. See [Listener/INTEGRATION.md](Listener/INTEGRATION.md). The previous TypeScript iteration is retained. |
+| [Caller/](Caller/) | Python 3.11+, uv | Scheduler and outbound delivery consuming confirmed Supabase tasks. `Caller/main.py` delegates intake to the canonical Listener. |
 | [FrontEnd/](FrontEnd/) | Node 24, plain HTML/CSS/JS | Web UI and a small Node server. Handles Google sign-in (Calendar and Gmail scopes) and serves the dashboard. |
 | [Data/](Data/) | Supabase (Postgres) | Database migrations in `Data/supabase/migrations/`. |
 
@@ -25,9 +25,9 @@ Mango is an AI secretary for personal and business phone calls, built on [Guava]
 
 ```bash
 cd Listener
-npm ci
-npm run preflight   # offline config check
-npm test
+uv sync
+guava run . -- --check   # offline config check
+uv run python -m unittest discover -s tests -p 'test_python*.py' -v
 guava run .         # prints a WebRTC test link
 ```
 
@@ -36,11 +36,12 @@ guava run .         # prints a WebRTC test link
 ```bash
 cd Caller
 uv sync
-uv run python main.py phone    # intake service
-uv run python scheduler.py     # delivery scheduler, in a second terminal
+DELIVERY_MODE=log guava run . -- scheduler   # read-only preview; no rows changed
+# When ready to permit real calls:
+DELIVERY_MODE=call guava run . -- scheduler
 ```
 
-Set `DELIVERY_MODE=log` on the scheduler to test without calling anyone.
+Run one inbound listener. The scheduler defaults to read-only preview. Enable call mode only when ready for outbound usage. See [INTEGRATION.md](Listener/INTEGRATION.md) for the full booking → Supabase → reminder flow and private calendar reads.
 
 ### FrontEnd
 
@@ -50,7 +51,7 @@ npm ci
 npm run ui          # http://localhost:3000
 ```
 
-The server reads a `.env` file from `FrontEnd/` or `FrontEnd/ui/`:
+All services read root `.env`, then `FrontEnd/.env` and `FrontEnd/ui/.env`; process environment takes priority:
 
 | Variable | Purpose |
 |---|---|
@@ -62,7 +63,7 @@ The server reads a `.env` file from `FrontEnd/` or `FrontEnd/ui/`:
 
 ## Local data and secrets
 
-These stay on your machine and are ignored by Git:
+Keep local credentials and data out of Git. The root `.env` is already tracked upstream and must be rotated/untracked by the owners; ignore rules only protect new untracked files:
 
 - `.env` files
 - `guava.toml` (Guava project and organization settings)
