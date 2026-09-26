@@ -48,13 +48,14 @@ class TaskStore:
 
     def add(self, task: MessageTask) -> MessageTask:
         task_payload = json.dumps({
+            "task": f"Deliver message to {task.recipient_name} ({task.recipient_phone}): \"{task.message}\"",
             "recipient_name": task.recipient_name,
             "recipient_phone": task.recipient_phone,
             "message": task.message,
             "id": task.id,
             "result": task.result,
         })
-        caller_val = task.requested_by or task.recipient_phone or "Unknown"
+        caller_val = task.requested_by or "Caller"
         res = add_task(
             caller=caller_val,
             task=task_payload,
@@ -64,6 +65,10 @@ class TaskStore:
         if isinstance(res, dict) and "id" in res:
             task.id = str(res["id"])
         return task
+
+    def update_status(self, task_id: str, status: str) -> None:
+        update_task_status(task_id, status)
+
 
     def claim_due(self) -> list[MessageTask]:
         """Atomically claim pending tasks due from Supabase."""

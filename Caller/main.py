@@ -146,12 +146,18 @@ def build_task(call: guava.Call, round_no: int) -> tuple[MessageTask | None, str
         if scheduled < now - timedelta(minutes=1):
             return None, "That delivery time is in the past. Ask for a future date and time."
 
+    caller_phone = None
+    if hasattr(call, "call_info") and call.call_info:
+        caller_phone = getattr(call.call_info, "from_number", None)
+    if not caller_phone and hasattr(call, "caller_id"):
+        caller_phone = getattr(call, "caller_id", None)
+
     return MessageTask(
-        recipient_name=str(get("recipient_name")),
+        recipient_name=str(get("recipient_name") or ""),
         recipient_phone=phone,
-        message=str(get("message")),
+        message=str(get("message") or ""),
         scheduled_at=scheduled.isoformat(),
-        requested_by=getattr(call.call_info, "from_number", None),
+        requested_by=caller_phone,
     ), None
 
 
@@ -193,17 +199,30 @@ def on_task_complete(call: guava.Call, task_id: str) -> None:
             logger.info("Re-asking caller: %s", problem)
             call.retry_task(reason=problem)
         else:
+            # When the guava agent hears a task from the caller, make it in Supabase
+            try:
+                store.add(task)
+                logger.info("Saved task %s to Supabase for %s at %s", task.id, task.recipient_name, task.scheduled_at)
+            except Exception as exc:
+                logger.error("Failed to save task to Supabase: %s", exc)
             confirm_task(call, round_no, task)
 
     elif task_id == f"confirm_{round_no}":
-        task = unconfirmed.pop(call.id)
+        task = unconfirmed.pop(call.id, None)
+        if not task:
+            logger.warning("No unconfirmed task found for call %s", call.id)
+            return
+
         if call.get_field(f"confirmed_{round_no}") != "yes":
             call.send_instruction("Apologize and collect the message details again.")
+            try:
+                store.finish(task.id, ok=False, result="Cancelled by caller during confirmation")
+            except Exception as exc:
+                logger.error("Failed to update cancelled task in Supabase: %s", exc)
             start_message_round(call, round_no + 1)
             return
 
-        store.add(task)
-        logger.info("Saved task %s for %s at %s", task.id, task.recipient_name, task.scheduled_at)
+        logger.info("Task %s confirmed by caller for %s at %s", task.id, task.recipient_name, task.scheduled_at)
         if call.get_field(f"another_message_{round_no}") == "yes":
             start_message_round(call, round_no + 1)
         else:
