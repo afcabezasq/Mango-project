@@ -6,8 +6,8 @@ Mango is an AI secretary for personal and business phone calls, built on [Guava]
 
 | Folder | Stack | What it does |
 |---|---|---|
-| [Listener/](Listener/) | TypeScript, Node 24 | Inbound agent. Answers calls with a personal or business profile, collects messages and appointment requests, and writes private call reports. It can also place one authorized outgoing call. See [Listener/README.md](Listener/README.md). |
-| [Caller/](Caller/) | Python 3.11+, uv | Message delivery. An intake agent saves messages with a delivery time to SQLite, and a scheduler calls each recipient when their message is due. See [Caller/README.md](Caller/README.md). |
+| [Listener/](Listener/) | Python 3.11+, uv | Inbound Mango agent. Saves confirmed phone-message requests to Supabase and books confirmed appointments using the account connected in the frontend. See [Listener/INTEGRATION.md](Listener/INTEGRATION.md). The previous TypeScript iteration is retained. |
+| [Caller/](Caller/) | Python 3.11+, uv | Team-owned scheduler and outbound delivery, consuming Supabase tasks. The older `Caller/main.py` intake remains for reference; use `Listener/main.py` for this integrated flow. |
 | [FrontEnd/](FrontEnd/) | Node 24, plain HTML/CSS/JS | Web UI and a small Node server. Handles Google sign-in (Calendar and Gmail scopes) and serves the dashboard. |
 | [Data/](Data/) | Supabase (Postgres) | Database migrations in `Data/supabase/migrations/`. |
 
@@ -25,9 +25,9 @@ Mango is an AI secretary for personal and business phone calls, built on [Guava]
 
 ```bash
 cd Listener
-npm ci
-npm run preflight   # offline config check
-npm test
+uv sync
+guava run . -- --check   # offline config check
+uv run python -m unittest discover -s tests -p 'test_python*.py' -v
 guava run .         # prints a WebRTC test link
 ```
 
@@ -36,11 +36,10 @@ guava run .         # prints a WebRTC test link
 ```bash
 cd Caller
 uv sync
-uv run python main.py phone    # intake service
-uv run python scheduler.py     # delivery scheduler, in a second terminal
+DELIVERY_MODE=log uv run python scheduler.py  # teammate's delivery dry run; it still consumes tasks
 ```
 
-Set `DELIVERY_MODE=log` on the scheduler to test without calling anyone.
+Run only the `Listener/` intake above for this flow. Coordinate scheduler testing with its owner; even dry-run mode changes task statuses. Real delivery needs separate approval.
 
 ### FrontEnd
 
