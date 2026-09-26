@@ -1,6 +1,7 @@
-"""Store for message tasks, backed directly by Supabase single tasks table (caller, date, task, status)."""
+"""Supabase delivery queue. Only confirmed pending rows can be claimed."""
 
 import json
+import re
 import sys
 import uuid
 from dataclasses import dataclass, field
@@ -11,15 +12,13 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from Data.db import add_task, claim_due_tasks, get_tasks, update_task_status
+from Data.db import add_task, claim_due_tasks, get_tasks, update_task_status, _request
+from urllib.parse import quote
 
-PENDING = "pending"
-RUNNING = "running"
-DONE = "done"
-FAILED = "failed"
+PENDING, RUNNING, DONE, FAILED = 'pending', 'in_progress', 'done', 'failed'
 
 
-def utc_now_iso() -> str:
+def utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -37,75 +36,49 @@ class MessageTask:
     result: str | None = None
 
     def __post_init__(self):
-        try:
-            self.scheduled_at = datetime.fromisoformat(self.scheduled_at).astimezone(timezone.utc).isoformat()
-        except Exception:
-            self.scheduled_at = utc_now_iso()
+        when = datetime.fromisoformat(self.scheduled_at.replace('Z', '+00:00'))
+        if when.tzinfo is None:
+            raise ValueError('Task time requires a UTC offset.')
+        self.scheduled_at = when.astimezone(timezone.utc).isoformat()
+        if not self.recipient_name or not self.message or not re.fullmatch(r'\+[1-9]\d{7,14}', self.recipient_phone):
+            raise ValueError('Task requires a name, message and E.164 phone number.')
 
 
 class TaskStore:
-    """Supabase-backed store mapping to single table: public.tasks (caller, date, task, status)."""
+    def __init__(self):
+        self.payloads = {}
 
-    def add(self, task: MessageTask) -> MessageTask:
-        task_payload = json.dumps({
-            "task": f"Deliver message to {task.recipient_name} ({task.recipient_phone}): \"{task.message}\"",
-            "recipient_name": task.recipient_name,
-            "recipient_phone": task.recipient_phone,
-            "message": task.message,
-            "id": task.id,
-            "result": task.result,
-        })
-        caller_val = task.requested_by or "Caller"
-        res = add_task(
-            caller=caller_val,
-            task=task_payload,
-            scheduled_date=task.scheduled_at,
-            status=task.status,
-        )
-        if isinstance(res, dict) and "id" in res:
-            task.id = str(res["id"])
+    def add(self, task):
+        payload = {key: getattr(task, key) for key in ('id', 'recipient_name', 'recipient_phone', 'message', 'result')}
+        row = add_task(task.requested_by or 'Caller', json.dumps(payload), task.scheduled_at, task.status)
+        if not isinstance(row, dict) or not row.get('id'):
+            raise RuntimeError('Supabase did not confirm a saved task.')
+        task.id = str(row['id'])
         return task
 
-    def update_status(self, task_id: str, status: str) -> None:
-        update_task_status(task_id, status)
+    def due_preview(self):
+        """Read-only dry run: never claim or finish a live task."""
+        return _request(f'tasks?select=id,date&status=eq.pending&date=lte.{quote(utc_now_iso())}&order=date.asc&limit=10') or []
 
-
-    def claim_due(self) -> list[MessageTask]:
-        """Atomically claim pending tasks due from Supabase."""
-        rows = claim_due_tasks()
+    def claim_due(self):
         tasks = []
-        for r in rows:
-            task_str = r.get("task", "")
+        for row in claim_due_tasks():
             try:
-                data = json.loads(task_str)
-                tasks.append(MessageTask(
-                    recipient_name=data.get("recipient_name", "Caller"),
-                    recipient_phone=data.get("recipient_phone", r.get("caller", "")),
-                    message=data.get("message", task_str),
-                    scheduled_at=r.get("date", utc_now_iso()),
-                    requested_by=r.get("caller"),
-                    id=str(r["id"]),
-                    status=RUNNING,
-                    created_at=r.get("created_at", utc_now_iso()),
-                ))
-            except Exception:
-                tasks.append(MessageTask(
-                    recipient_name="Caller",
-                    recipient_phone=r.get("caller", ""),
-                    message=task_str,
-                    scheduled_at=r.get("date", utc_now_iso()),
-                    requested_by=r.get("caller"),
-                    id=str(r["id"]),
-                    status=RUNNING,
-                ))
+                data = json.loads(row['task']) if isinstance(row['task'], str) else row['task']
+                task = MessageTask(recipient_name=data['recipient_name'], recipient_phone=data['recipient_phone'],
+                                   message=data['message'], scheduled_at=row['date'], requested_by=row.get('caller'),
+                                   id=str(row['id']), status=RUNNING)
+            except (ValueError, KeyError, TypeError):
+                update_task_status(row['id'], FAILED, expected_status=RUNNING)
+                continue  # Never turn malformed database content into a fallback phone call.
+            self.payloads[task.id] = data
+            tasks.append(task)
         return tasks
 
-    def finish(self, task_id: str, ok: bool, result: str) -> None:
-        new_status = DONE if ok else FAILED
-        update_task_status(task_id, new_status)
-
-    def requeue_running(self) -> int:
-        running_tasks = get_tasks(status=RUNNING)
-        for t in running_tasks:
-            update_task_status(t["id"], PENDING)
-        return len(running_tasks)
+    def finish(self, task_id, ok, result):
+        payload = self.payloads[task_id]
+        payload = {**payload, 'result': result, 'completed_at': utc_now_iso()}
+        rows = update_task_status(task_id, DONE if ok else FAILED, expected_status=RUNNING, task=json.dumps(payload))
+        if not rows:
+            raise RuntimeError('Could not confirm delivery status was saved; review before retrying.')
+        self.payloads.pop(task_id, None)

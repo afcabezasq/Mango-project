@@ -38,6 +38,7 @@ async function init() {
       if (data.agentNumber) {
         state.agentNumber = data.agentNumber;
         agentNumberDisplay.textContent = state.agentNumber;
+        document.querySelector('a[href^="tel:"]').href = `tel:${state.agentNumber}`;
       }
       if (data.googleClientId) {
         state.googleClientId = data.googleClientId;
@@ -124,6 +125,7 @@ function loginUser(user) {
 
   connectGoogleBtn.style.display = "none";
   userProfile.style.display = "inline-flex";
+  document.getElementById("calendarAccessPanel").hidden = false;
 }
 
 signOutBtn.addEventListener("click", async () => {
@@ -132,9 +134,25 @@ signOutBtn.addEventListener("click", async () => {
   } catch {}
 
   state.currentUser = null;
+  document.getElementById("calendarAccessPanel").hidden = true;
+  document.getElementById("calendarAccessCode").value = "";
   userProfile.style.display = "none";
   connectGoogleBtn.style.display = "inline-flex";
   showStatus("Google disconnected");
+});
+
+document.getElementById("calendarAccessForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const input = document.getElementById("calendarAccessCode");
+  try {
+    const response = await fetch("/api/calendar/access-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XmlHttpRequest" },
+      body: JSON.stringify({ code: input.value }),
+    });
+    showStatus(response.ok ? "Calendar access code saved" : "Connect Calendar and use an 8 to 12 digit code");
+  } catch { showStatus("Could not save the calendar access code"); }
+  finally { input.value = ""; }
 });
 
 // 3. Copy Agent Number

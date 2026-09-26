@@ -42,7 +42,8 @@ class ListenerTests(unittest.TestCase):
         self.save, self.calendar = Mock(return_value="saved-row"), Mock()
         self.calendar.account_id.return_value = "google-owner"
         self.calendar.available.return_value = True
-        self.listener = Listener(PROFILE, self.calendar, self.save)
+        self.booking, self.access = Mock(), Mock()
+        self.listener = Listener(PROFILE, self.calendar, self.save, save_booking=self.booking, access=self.access)
 
     def collect(self, kind="message"):
         call = FakeCall(kind)
@@ -50,7 +51,8 @@ class ListenerTests(unittest.TestCase):
         self.listener.complete(call, "intent")
         call.fields.update({"recipient_name_1": "Test Recipient", "recipient_phone_1": "+12025550123",
                             "message_1": "Synthetic message", "scheduled_at_1": START,
-                            "title_1": "Consultation", "name_1": "Test Visitor", "start_1": START, "end_1": END})
+                            "title_1": "Consultation", "name_1": "Test Visitor", "start_1": START, "end_1": END,
+                            "reminder_at_1": "event_start"})
         self.listener.complete(call, "details_1")
         return call
 
@@ -86,9 +88,9 @@ class ListenerTests(unittest.TestCase):
         self.calendar.book.assert_not_called()
         call.fields["confirmed_1"] = "yes"
         self.listener.complete(call, "confirm_1")
-        self.calendar.book.assert_called_once()
-        self.assertIs(self.calendar.book.call_args.kwargs["confirmed"], True)
-        self.save.assert_not_called()  # A booking must not accidentally enqueue an outbound call.
+        self.booking.assert_called_once()
+        self.assertEqual(self.booking.call_args.kwargs['reminder']['scheduled_at'], START)
+        self.save.assert_not_called()  # Booking uses the held-row workflow, not an immediately pending message.
 
     def test_invalid_date_reasks_and_busy_time_cannot_reach_confirmation(self):
         call = self.collect()
@@ -184,6 +186,16 @@ class CalendarTests(unittest.TestCase):
         with self.assertRaises(CalendarError) as caught:
             self.book()
         self.assertNotIn("fake-access", str(caught.exception))
+
+    def test_calendar_reads_expand_recurring_events_and_preserve_all_day_dates(self):
+        data = {"items": [{"id": "event", "summary": "All day", "start": {"date": "2030-01-01"},
+                           "end": {"date": "2030-01-02"}}], "nextPageToken": "next"}
+        self.http.return_value = (200, data)
+        self.assertEqual(self.calendar.appointments(START, END, "google-owner"), data)
+        url, method = self.http.call_args.args[:2]
+        self.assertIn("singleEvents=true", url)
+        self.assertIn("orderBy=startTime", url)
+        self.assertEqual(method, "GET")
 
     def test_actual_frontend_writer_produces_a_connection_python_can_use(self):
         helper = Path(__file__).resolve().parents[2] / "FrontEnd/ui/google-connection.js"

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 
 import guava
 from guava.events import BotSessionEnded, OutboundCallFailed
@@ -17,7 +18,7 @@ def build_delivery_agent(task: MessageTask, outcome: dict) -> guava.Agent:
     agent = guava.Agent(
         name=SENDER_NAME,
         organization=ORGANIZATION,
-        purpose=f"Deliver a personal message on behalf of {SENDER_NAME}.",
+        purpose="Deliver a requested message or calendar reminder by phone.",
     )
 
     @agent.on_call_start
@@ -66,10 +67,12 @@ def execute_task(task: MessageTask) -> tuple[bool, str]:
 
     Set DELIVERY_MODE=log to skip the phone call (useful while testing with `chat`).
     """
-    if os.environ.get("DELIVERY_MODE", "call") == "log":
-        logger.info("[dry run] Would call %s at %s with: %s",
-                    task.recipient_name, task.recipient_phone, task.message)
+    if os.environ.get("DELIVERY_MODE", "log") != "call":
+        logger.info("[dry run] Would deliver task %s", task.id)
         return True, "logged (dry run)"
+
+    if not re.fullmatch(r"\+[1-9]\d{7,14}", AGENT_PHONE_NUMBER):
+        raise ValueError("Configure an owned Guava phone number before enabling delivery.")
 
     outcome: dict = {}
     agent = build_delivery_agent(task, outcome)

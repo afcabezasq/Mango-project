@@ -1,5 +1,5 @@
 """Supabase Database & Vault Client for Mango Agent.
-All secrets and tasks are retrieved directly from Supabase, with ZERO reliance on local .env files.
+Configuration comes from the shared root .env or environment; values are never logged.
 """
 
 import json
@@ -8,19 +8,26 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-SUPABASE_URL = "https://ddiotzmdaugryfrfdxxr.supabase.co"
-SUPABASE_KEY = "sb_publishable_SRljIma0oj5744D5ggKQ7A_3IoLAp6D"
+from .config import load_config
+
+config = load_config()
+SUPABASE_URL = config.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = (config.get("SUPABASE_SERVICE_ROLE_KEY") or config.get("SUPABASE_SECRET_KEY")
+                or config.get("SUPABASE_PUBLISHABLE_KEY") or config.get("SUPABASE_ANON_KEY", ""))
 
 _SECRETS_CACHE: Dict[str, str] = {}
 
 
 def _request(endpoint: str, method: str = "GET", data: Optional[Dict[str, Any]] = None, extra_headers: Optional[Dict[str, str]] = None) -> Any:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("Configure SUPABASE_URL and a server-side Supabase key.")
     url = f"{SUPABASE_URL}/rest/v1/{endpoint}"
     headers = {
         "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
+    if SUPABASE_KEY.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {SUPABASE_KEY}"
     if extra_headers:
         headers.update(extra_headers)
 
@@ -74,7 +81,7 @@ def add_task(caller: str, task: str, scheduled_date: Optional[str] = None, statu
     res = _request("tasks", method="POST", data=payload, extra_headers={"Prefer": "return=representation"})
     if isinstance(res, list) and len(res) > 0:
         return res[0]
-    return payload
+    raise RuntimeError("Supabase did not confirm a saved task ID.")
 
 
 def get_tasks(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
@@ -91,20 +98,27 @@ def get_tasks(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, A
 
 
 def claim_due_tasks(limit: int = 10) -> List[Dict[str, Any]]:
-    """Find pending tasks that are due, update their status to in_progress, and return them."""
-    now_iso = datetime.now(timezone.utc).isoformat()
-    endpoint = f"tasks?select=*&status=eq.pending&date=lte.{urllib.parse.quote(now_iso)}&order=date.asc&limit={limit}"
-    due_tasks = _request(endpoint, method="GET")
-    
+    """Compare-and-set each due row; only the winning scheduler receives it."""
+    now_iso = urllib.parse.quote(datetime.now(timezone.utc).isoformat())
+    due_tasks = _request(f"tasks?select=*&status=eq.pending&date=lte.{now_iso}&order=date.asc&limit={int(limit)}")
     claimed = []
-    if isinstance(due_tasks, list):
-        for t in due_tasks:
-            update_task_status(t["id"], "in_progress")
-            claimed.append({**t, "status": "in_progress"})
+    for task in due_tasks or []:
+        task_id = urllib.parse.quote(str(task["id"]), safe="")
+        rows = _request(f"tasks?id=eq.{task_id}&status=eq.pending&date=lte.{now_iso}",
+                        method="PATCH", data={"status": "in_progress"},
+                        extra_headers={"Prefer": "return=representation"})
+        if rows:
+            claimed.extend(rows)
     return claimed
 
 
-def update_task_status(task_id: str, status: str) -> None:
-    """Update task status in Supabase tasks table."""
-    endpoint = f"tasks?id=eq.{urllib.parse.quote(task_id)}"
-    _request(endpoint, method="PATCH", data={"status": status})
+def update_task_status(task_id: str, status: str, *, expected_status=None, task=None):
+    """Return changed rows, permitting conditional state transitions."""
+    endpoint = f"tasks?id=eq.{urllib.parse.quote(str(task_id), safe='')}"
+    if expected_status:
+        endpoint += f"&status=eq.{urllib.parse.quote(expected_status, safe='')}"
+    data = {"status": status}
+    if task is not None:
+        data["task"] = task
+    return _request(endpoint, method="PATCH", data=data,
+                    extra_headers={"Prefer": "return=representation"}) or []

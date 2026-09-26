@@ -80,7 +80,17 @@ test("real UI routes validate origin, exchange mocked Google code, store private
   const tokenFile = path.join(directory, ".mango-data/google_tokens.json");
   assert.equal(fs.statSync(tokenFile).mode & 0o777, 0o600);
   assert.equal(JSON.parse(fs.readFileSync(tokenFile)).clientId, "fake-client");
+  const accessResponse = await request('/api/calendar/access-code', 'POST', headers, '{"code":"12345678"}');
+  assert.equal(accessResponse.status, 200);
+  const accessFile = path.join(directory, '.mango-data/calendar_access.json');
+  const accessRecord = JSON.parse(fs.readFileSync(accessFile));
+  assert.equal(accessRecord.account, 'test-account');
+  assert.equal(accessRecord.hash.length, 64);
+  assert.ok(!JSON.stringify(accessRecord).includes('12345678'));
+  assert.equal(fs.statSync(accessFile).mode & 0o777, 0o600);
+  assert.equal((await request('/api/calendar/access-code', 'POST', headers, '{"code":"123"}')).status, 400);
   assert.equal((await request("/.env", "GET", headers)).status, 404);
   assert.equal((await post("/api/auth/disconnect")).status, 200);
   assert.equal(fs.existsSync(tokenFile), false);
+  assert.equal(fs.existsSync(accessFile), false);
 });

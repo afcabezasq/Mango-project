@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, pbkdf2Sync } from "node:crypto";
+
+export function calendarAccessRecord(account, code) {
+  if (!account || !/^[0-9]{8,12}$/.test(code)) throw new Error("Use an 8 to 12 digit access code.");
+  const salt = randomBytes(16).toString("hex");
+  const hash = pbkdf2Sync(code, Buffer.from(salt, "hex"), 210000, 32, "sha256").toString("hex");
+  return { account, salt, hash };
+}
 
 export function connectionRecord(tokens, user, clientId, previous = null, now = Date.now()) {
   if (!tokens.access_token || !user.sub || !user.email || user.email_verified !== true) {

@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-import os
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -12,6 +12,9 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 FRONTEND = Path(__file__).resolve().parents[1] / "FrontEnd"
+if str(FRONTEND.parent) not in sys.path:
+    sys.path.insert(0, str(FRONTEND.parent))
+from Data.config import load_config
 CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 API = "https://www.googleapis.com/calendar/v3"
 
@@ -45,15 +48,9 @@ class GoogleCalendar:
         self.token_file = Path(token_file or FRONTEND / ".mango-data/google_tokens.json")
         self._lock = threading.RLock()
         self._cache = None
-        config = {}
-        env_file = next((p for p in (FRONTEND / ".env", FRONTEND / "ui/.env") if p.exists()), None)
-        if env_file:
-            for line in env_file.read_text().splitlines():
-                key, separator, value = line.strip().partition("=")
-                if separator and key in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"):
-                    config[key] = value.strip().strip("\"'")
-        self._client_id = os.environ.get("GOOGLE_CLIENT_ID") or config.get("GOOGLE_CLIENT_ID")
-        self._client_secret = os.environ.get("GOOGLE_CLIENT_SECRET") or config.get("GOOGLE_CLIENT_SECRET")
+        config = load_config()
+        self._client_id = config.get("GOOGLE_CLIENT_ID")
+        self._client_secret = config.get("GOOGLE_CLIENT_SECRET")
 
     def _record(self, expected_account=None):
         try:

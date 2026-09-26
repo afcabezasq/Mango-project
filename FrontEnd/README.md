@@ -73,3 +73,7 @@ FrontEnd/
 - `POST /api/auth/google/code` — Exchanges Google authorization code for access & refresh tokens.
 - `POST /api/auth/disconnect` — Clears stored Google tokens.
 - `POST /api/call` — Dispatches an outbound call request to the specified phone number.
+
+## Calendar reads and scheduled reminders
+
+After Google sign-in, set a private 8–12 digit calendar access code in the dashboard. Mango requires it to read event details by phone. Bookings also collect a callback number and reminder time, defaulting to event start if accepted. See [the integration guide](../Listener/INTEGRATION.md). Root `.env` now loads consistently alongside frontend overrides; process environment wins.

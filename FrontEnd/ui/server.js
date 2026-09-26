@@ -4,18 +4,16 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectionRecord, connectionStatus, saveConnection } from "./google-connection.js";
+import { connectionRecord, connectionStatus, saveConnection, calendarAccessRecord } from "./google-connection.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.join(__dirname, "..");
 
-// Load .env file from project root or local ui folder
-const envPath = fs.existsSync(path.join(ROOT_DIR, ".env")) 
-  ? path.join(ROOT_DIR, ".env") 
-  : path.join(__dirname, ".env");
-
-if (fs.existsSync(envPath)) {
+// Root configuration works from every entrypoint. Explicit environment wins.
+const fileConfig = {};
+for (const envPath of [path.join(ROOT_DIR, "../.env"), path.join(ROOT_DIR, ".env"), path.join(__dirname, ".env")]) {
+ if (fs.existsSync(envPath)) {
   const content = fs.readFileSync(envPath, "utf8");
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -24,16 +22,19 @@ if (fs.existsSync(envPath)) {
     if (eqIdx > 0) {
       const key = trimmed.slice(0, eqIdx).trim();
       const val = trimmed.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, "");
-      process.env[key] = val;
+      fileConfig[key] = val;
     }
   }
+ }
 }
+for (const [key, value] of Object.entries(fileConfig)) process.env[key] ??= value;
 
 const PORT = process.env.PORT || 3000;
 const UI_ORIGIN = process.env.MANGO_UI_ORIGIN || `http://localhost:${PORT}`;
 const UI_STATIC_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, ".mango-data");
 const TOKENS_FILE = path.join(DATA_DIR, "google_tokens.json");
+const ACCESS_FILE = path.join(DATA_DIR, "calendar_access.json");
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
@@ -202,11 +203,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // The local signed-in operator sets the code for private calendar reads by phone.
+  if (pathname === "/api/calendar/access-code" && req.method === "POST") {
+    let body = "";
+    req.on("data", chunk => { body += chunk; if (body.length > 4096) req.destroy(); });
+    req.on("end", () => {
+      try {
+        const connected = JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8"));
+        if (!connectionStatus(connected).hasCalendar) throw new Error("Calendar not connected");
+        const record = calendarAccessRecord(connected.user.sub, JSON.parse(body).code);
+        saveConnection(ACCESS_FILE, record);
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ success: true }));
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Connect Calendar and enter an 8 to 12 digit code." }));
+      }
+    });
+    return;
+  }
+
   // 4. Disconnect Google account
   if (pathname === "/api/auth/disconnect" && req.method === "POST") {
     if (fs.existsSync(TOKENS_FILE)) {
       fs.unlinkSync(TOKENS_FILE);
     }
+    if (fs.existsSync(ACCESS_FILE)) fs.unlinkSync(ACCESS_FILE);
     console.log("[Mango] Google account disconnected.");
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ success: true }));
