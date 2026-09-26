@@ -7,10 +7,12 @@
     "start": "node --import tsx main.ts",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "preflight": "node --import tsx main.ts --check"
+    "preflight": "node --import tsx main.ts --check",
+    "ui": "node ui/server.js"
   },
   "dependencies": {
     "@guava-ai/guava-sdk": "0.35.0",
+    "guava": "^0.0.5",
     "tsx": "4.23.15"
   },
   "engines": {
