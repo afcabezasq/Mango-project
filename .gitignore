@@ -8,3 +8,6 @@ guava.toml
 *.log
 dist/
 coverage/
+credentials.json
+token.json
+client_secret_*.json

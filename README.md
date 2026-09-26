@@ -66,6 +66,8 @@ guava run . -- --mode chat         # Guava text test session
 
 ## Code and reports
 
+Google Calendar account linking is available separately in `src/google-calendar.ts`, for Gmail and Google accounts registered with another email provider such as Proton. See [GOOGLE_CALENDAR.md](GOOGLE_CALENDAR.md) for OAuth setup and `npm run calendar:link`. This links calendar metadata only; voice-agent calendar actions are not connected yet.
+
 | File | Purpose |
 |---|---|
 | `main.ts` | Entrypoint and channel dispatch. |
@@ -73,6 +75,7 @@ guava run . -- --mode chat         # Guava text test session
 | `profiles/*.json` | Owner-approved personal/business context. |
 | `src/config.ts` | Profile validation and outbound launch checks. |
 | `src/reports.ts` | Atomic private local JSON call reports. |
+| `src/google-calendar.ts` | Reusable Google Calendar account linking, independent of voice calls. |
 | `tests/mango.test.ts` | Offline behavior/configuration/report tests. |
 | `package.json`, `package-lock.json`, `tsconfig.json` | Runtime, pinned dependencies, and TypeScript configuration. |
 | `guava.toml` (local only) | Guava project/organization and Node 24 deployment settings; ignored by Git and not included in a clone. |
