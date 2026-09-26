@@ -4,6 +4,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { connectionRecord, connectionStatus, saveConnection } from "./google-connection.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,12 +30,13 @@ if (fs.existsSync(envPath)) {
 }
 
 const PORT = process.env.PORT || 3000;
+const UI_ORIGIN = process.env.MANGO_UI_ORIGIN || `http://localhost:${PORT}`;
 const UI_STATIC_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, ".mango-data");
 const TOKENS_FILE = path.join(DATA_DIR, "google_tokens.json");
 
 if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 }
 
 const MIME_TYPES = {
@@ -67,6 +69,7 @@ function httpsRequest(options, postData = null) {
       });
     });
     req.on("error", reject);
+    req.setTimeout(15000, () => req.destroy(new Error("Google request timed out")));
     if (postData) {
       req.write(postData);
     }
@@ -75,13 +78,21 @@ function httpsRequest(options, postData = null) {
 }
 
 const server = http.createServer(async (req, res) => {
+  // This single-account dashboard and token store are local to the operator's machine.
+  if (req.headers.host !== new URL(UI_ORIGIN).host ||
+      (req.headers.origin && req.headers.origin !== UI_ORIGIN) ||
+      (req.method === "POST" && (req.headers.origin !== UI_ORIGIN || req.headers["x-requested-with"] !== "XmlHttpRequest"))) {
+    res.writeHead(403).end("Request origin rejected");
+    return;
+  }
   const parsedUrl = new URL(req.url || "/", `http://${req.headers.host}`);
   let pathname = parsedUrl.pathname;
 
   // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Origin", UI_ORIGIN);
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Requested-With");
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -106,12 +117,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const tokenData = JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8"));
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          authenticated: true,
-          user: tokenData.user || null,
-          hasCalendar: true,
-          hasGmail: true
-        }));
+        res.end(JSON.stringify(connectionStatus(tokenData)));
         return;
       } catch {}
     }
@@ -140,7 +146,7 @@ const server = http.createServer(async (req, res) => {
           code,
           client_id: clientId,
           client_secret: clientSecret,
-          redirect_uri: "postmessage",
+          redirect_uri: UI_ORIGIN,
           grant_type: "authorization_code"
         }).toString();
 
@@ -155,9 +161,9 @@ const server = http.createServer(async (req, res) => {
         }, tokenPostData);
 
         if (tokenResp.status !== 200 || !tokenResp.data.access_token) {
-          console.error("Google token error:", tokenResp.data);
+          console.error("Google token exchange failed");
           res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Failed to exchange authorization code", details: tokenResp.data }));
+          res.end(JSON.stringify({ error: "Failed to exchange authorization code" }));
           return;
         }
 
@@ -173,34 +179,22 @@ const server = http.createServer(async (req, res) => {
           }
         });
 
-        const user = userResp.status === 200 ? userResp.data : {
-          name: "Google User",
-          email: ""
-        };
-
-        const tokenRecord = {
-          tokens,
-          user: {
-            name: user.name,
-            email: user.email,
-            picture: user.picture
-          },
-          scopes: tokens.scope,
-          updatedAt: new Date().toISOString()
-        };
-
-        fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokenRecord, null, 2), "utf8");
-        console.log(`[Mango] Google OAuth connected for ${user.email} with Calendar & Gmail permissions!`);
+        if (userResp.status !== 200) throw new Error("Could not verify Google account");
+        let previous = null;
+        if (fs.existsSync(TOKENS_FILE)) {
+          try { previous = JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8")); } catch {}
+        }
+        const tokenRecord = connectionRecord(tokens, userResp.data, clientId, previous);
+        saveConnection(TOKENS_FILE, tokenRecord);
+        console.log("[Mango] Google account connected");
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           success: true,
-          user: tokenRecord.user,
-          hasCalendar: true,
-          hasGmail: true
+          ...connectionStatus(tokenRecord)
         }));
       } catch (err) {
-        console.error("Auth exchange failure:", err);
+        console.error("Google authentication processing failed");
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Authentication processing failed" }));
       }
@@ -243,6 +237,10 @@ const server = http.createServer(async (req, res) => {
 
   // 6. Static file serving from ui/
   if (pathname === "/") pathname = "/index.html";
+  if (!["/index.html", "/app.js", "/styles.css"].includes(pathname) && !pathname.startsWith("/assets/")) {
+    res.writeHead(404).end("Not found");
+    return;
+  }
   const safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, "");
   const filePath = path.join(UI_STATIC_DIR, safePath);
 
@@ -258,6 +256,6 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`Mango UI running at http://localhost:${PORT}`);
 });

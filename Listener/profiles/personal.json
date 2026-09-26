@@ -3,5 +3,5 @@
   "ownerName": "",
   "organization": "",
   "approvedFacts": [],
-  "instructions": "Take messages and appointment requests. Record anything that needs the owner's decision. No calendar or notification service is connected yet."
+  "instructions": "Take messages and appointment requests. Record anything that needs the owner's decision. Require explicit confirmation before saving a request or booking; never claim an unverified action succeeded."
 }
