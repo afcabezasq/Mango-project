@@ -1,8 +1,4 @@
 # Secrets and local environment
-.env
-.env.*
-!.env.example
-
 # Node
 node_modules/
 dist/
