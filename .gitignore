@@ -1,10 +1,42 @@
-node_modules/
+# Secrets and local environment
 .env
 .env.*
 !.env.example
-.mango-data/
-profiles/*.local.json
-guava.toml
-*.log
+
+# Node
+node_modules/
 dist/
 coverage/
+*.log
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local data (call reports, OAuth tokens, task queues)
+.mango-data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Guava local config (project/org settings)
+guava.toml
+
+# Private profile overrides
+**/profiles/*.local.json
+
+# Supabase local state
+Data/supabase/.branches/
+Data/supabase/.temp/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
