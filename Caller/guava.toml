@@ -1,9 +1,0 @@
-project_id = "gp-6928b42d-6c67-41ea-a178-7cb37e9237ab"
-org_id = "6ab6e47b1c28d963554e85f0"
-name = "waitlist-agent"
-call_direction = "inbound"
-base_image = "python-sandbox:3.12"
-phone_number = "+14849622356"
-tier = "guava-seed"
-replicas = 1
-enable_healthcheck = true
