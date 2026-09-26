@@ -48,7 +48,7 @@ Then dial the owned number from a real phone. The laptop must stay awake and onl
 A single **real outgoing call** (requires Guava Outbound Dialing Registration approval and an identified owner/organization in the profile):
 
 ```bash
-GUAVA_AGENT_NUMBER=+15555550123 guava run . -- \
+GUAVA_AGENT_NUMBER=+14849622356 guava run . -- \
   --mode outbound --profile profiles/personal.local.json \
   --to +15555550124 --recipient "Taylor" \
   --objective "Ask whether a repair appointment is available on Friday; record options for my review." \
